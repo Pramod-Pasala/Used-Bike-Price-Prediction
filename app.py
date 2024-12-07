@@ -8,8 +8,6 @@ import seaborn as sns
 from sklearn.model_selection import train_test_split
 from sklearn.ensemble import RandomForestRegressor
 from reg import get_first
-# disable warnings in streamlit
-st.set_option('deprecation.showPyplotGlobalUse', False)
 
 # project description
 proj_desc =  '''
