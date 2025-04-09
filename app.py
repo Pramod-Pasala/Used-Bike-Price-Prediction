@@ -5,9 +5,11 @@ import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
 import seaborn as sns
-from sklearn.model_selection import train_test_split
-from sklearn.ensemble import RandomForestRegressor
-from reg import get_first
+import joblib
+
+model = joblib.load('model.pkl')
+le_brand = joblib.load('le_brand.pkl')
+le_owner = joblib.load('le_owner.pkl')
 
 # project description
 proj_desc =  '''
@@ -45,7 +47,7 @@ class Display():
             #st.markdown('** Home Page **')
             
             # display image
-            st.image(marketing_image,use_column_width=True)
+            st.image(marketing_image,use_container_width=True)
             
             # display project description
             st.write(proj_desc)
@@ -77,38 +79,71 @@ class Display():
 
             # correlation checkbox    
             if st.checkbox('Show Correlation Matrix'):
-                st.write(data.corr(method='pearson'))
+                numeric_data = data.select_dtypes(include=['number'])
+                st.write(numeric_data.corr(method='pearson'))
 
             # scatter plot checkbox    
             if st.checkbox('Show Scatter Plot'):
-                sns.lmplot(x='age',y='price',data=data,fit_reg=False,hue='owner',legend=True,palette='Set1')
-                st.pyplot()
+                fig = self.generate_plot(
+                    data,
+                    plot_type='scatter',
+                    x_col='age',
+                    y_col='price',
+                    hue_col='owner',
+                    palette='Set1',
+                    legend=True,
+                    title='Age vs Price by Owner'
+                )
+                st.pyplot(fig)
 
             # histogram plot checkbox   
             if st.checkbox('Show Histogram'):
-                plt.hist(data['age'],color='green',edgecolor='red',bins=15)
-                plt.title('Age VS Frequency')
-                plt.xlabel('Age(months)')
-                plt.ylabel('Frequency')
-                st.pyplot()    
+                fig = self.generate_plot(
+                    data,
+                    plot_type='histogram',
+                    x_col='age',
+                    color='green',
+                    edgecolor='red',
+                    bins=15,
+                    title='Age VS Frequency',
+                    xlabel='Age(months)',
+                    ylabel='Frequency'
+                )
+                st.pyplot(fig)   
 
             # bar chart checkbox     
             if st.checkbox('Show Bar Plot'):
-                sns.countplot(x='brand',data=data)
-                plt.xticks(rotation=90)
-                st.pyplot()
+                fig = self.generate_plot(
+                    data,
+                    plot_type='bar',
+                    x_col='brand',
+                    xtick_rotation=90,
+                    title='Count of Items by Brand'
+                )
+                st.pyplot(fig)
 
             # box plot checkbox    
             if st.checkbox('Show Box plot'):
-                sns.boxplot(x=data['owner'],y=data['price'])
-                #bx.set_ylim(0,0.1)
-                st.pyplot()
+                fig = self.generate_plot(
+                    data,
+                    plot_type='box',
+                    x_col='owner',
+                    y_col='price',
+                    title='Price Distribution by Owner'
+                )
+                st.pyplot(fig)
 
             # heatmap checkbox          
             if st.checkbox('Show Heat Map'):
-                sns.heatmap(data.corr(),annot=True,cmap='Blues')
-                st.pyplot()
-
+                fig = self.generate_plot(
+                    data.select_dtypes(include=['number']),
+                    plot_type='heatmap',
+                    annot=True,
+                    cmap='Blues',
+                    title='Correlation Heatmap',
+                    figsize=(10, 8)  # Slightly larger for readability
+                )
+                st.pyplot(fig)
         # prediction tab    
         elif choose=="Prediction":
 
@@ -122,16 +157,12 @@ class Display():
             data.drop_duplicates(keep='first',inplace=True)
 
             # selectbox
-            bike_name=st.selectbox('Bike Name',data['bike_name'].unique())
-            
-            # selectbox
-            city=st.selectbox('City',data['city'].unique())
+            brand=st.selectbox('Brand',data['brand'].unique())
+            brand=le_brand.transform([brand])[0]
 
             # selectbox
             owner=st.selectbox('Owner',data['owner'].unique())
-
-            # selectbox
-            brand=st.selectbox('Brand',[get_first(bike_name)])
+            owner=le_owner.transform([owner])[0]
 
             # slider
             kms_driven=st.slider("Kilometers driven",min_value=round(min(data['kms_driven'])),max_value=round(max(data['kms_driven'])),value=round(data['kms_driven'].mean()),step=1000)
@@ -144,71 +175,115 @@ class Display():
 
             # predict button
             if st.button("Predict"):
-
-                # one hot encoding
-                data=pd.get_dummies(data,drop_first=True)
-
-                # features
-                X=data.drop(['price'],axis='columns',inplace=False)
-
-                # target
-                y=data['price']
-
-                # normalize the target
-                y=np.log(y)
-
-                # split the data
-                X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.3, random_state=101)
-
-                # random forest regressor
-                rf=RandomForestRegressor(n_estimators=100,max_features='auto',max_depth=100,min_samples_split=10,min_samples_leaf=4,random_state=101)
-
-                # fit the model
-                model=rf.fit(X_train,y_train)
-
-                # load the data
-                data=pd.read_csv('Used_Bikes.csv')
-
-                # drop duplicate rows
-                data.drop_duplicates(keep='first',inplace=True)
-
-                # features
-                data=data.drop('price',axis='columns',inplace=False)
-
-                # create a dataframe
-                d=pd.DataFrame({'bike_name':[bike_name],'city':[city],'kms_driven':[kms_driven],'owner':[owner],'age':[age],'power':[power],'brand':[brand]})
-
-                # add user input
-                data=pd.concat([data,d],axis=0,ignore_index=True)
-
-                # one hot encoding
-                d=pd.get_dummies(data,drop_first=True)
-
-                # predict the price
-                p=rf.predict(d)
-
+                feature_names = ['kms_driven', 'owner', 'age', 'power', 'brand']
+                input_data = pd.DataFrame([[kms_driven, owner, age, power, brand]], columns=feature_names)
+                prediction = model.predict(input_data)
+                prediction = np.exp(prediction)
                 # display the predicted price
-                st.subheader(f'The price of the bike is ₹{round(np.e**p[-1])}')
+                st.subheader(f'The price of the bike is ₹{int(prediction[0])}')
 
+    @st.cache_data
+    def generate_plot(_self,data,plot_type,**kwargs):
+
+        fig, ax = plt.subplots(figsize=kwargs.get('figsize', (8, 6)))
+        
+        if plot_type == 'scatter':
+            # Scatter plot
+            sns.scatterplot(
+                x=kwargs.get('x_col', 'age'),
+                y=kwargs.get('y_col', 'price'),
+                data=data,
+                hue=kwargs.get('hue_col', 'owner'),
+                palette=kwargs.get('palette', 'Set1'),
+                legend=kwargs.get('legend', True),
+                ax=ax
+            )
+        
+        elif plot_type == 'histogram':
+            # Histogram
+            ax.hist(
+                data[kwargs.get('x_col', 'age')],
+                color=kwargs.get('color', 'green'),
+                edgecolor=kwargs.get('edgecolor', 'red'),
+                bins=kwargs.get('bins', 15)
+            )
+            ax.set_title(kwargs.get('title', 'Age VS Frequency'))
+            ax.set_xlabel(kwargs.get('xlabel', 'Age(months)'))
+            ax.set_ylabel(kwargs.get('ylabel', 'Frequency'))
+        
+        elif plot_type == 'bar':
+            # Bar plot (countplot)
+            sns.countplot(
+                x=kwargs.get('x_col', 'brand'),
+                data=data,
+                ax=ax
+            )
+            ax.tick_params(axis='x', rotation=kwargs.get('xtick_rotation', 90))
+        
+        elif plot_type == 'box':
+            # Box plot
+            sns.boxplot(
+                x=kwargs.get('x_col', 'owner'),
+                y=kwargs.get('y_col', 'price'),
+                data=data,
+                ax=ax
+            )
+            
+        elif plot_type == 'heatmap':
+            # Heatmap
+            sns.heatmap(
+                data.corr(),
+                annot=kwargs.get('annot', True),
+                cmap=kwargs.get('cmap', 'Blues'),
+                ax=ax
+            )
+        
+        else:
+            raise ValueError(f"Unsupported plot_type: {plot_type}")
+        
+   
+        if 'title' in kwargs and plot_type != 'histogram':  
+            ax.set_title(kwargs['title'])
+        
+        return fig  
 
 
 # app title
 st.title("Used Bike Price Prediction")
 
 # menu bar
-choose = option_menu("Main Menu", ["Home", "Exploratory Data Analysis", "Prediction"],
-                         icons=['house', 'bar-chart-fill','coin'],
-                         menu_icon="cast", default_index=0,
-                         orientation='horizontal',
-                         
-                         styles={
-        "container": {"padding": "5!important", "background-color": "#fafafa"},
-        "icon": {"color": "yellow", "font-size": "25px"}, 
-        "nav-link": {"font-size": "16px", "text-align": "left", "margin":"0px", "--hover-color": "#eee"},
-        "nav-link-selected": {"background-color": "#02ab21"},
-        "max-width" : '100%',
-                         }
-    )
+choose = option_menu(
+    "Main Menu",
+    ["Home", "Exploratory Data Analysis", "Prediction"],
+    icons=['house', 'bar-chart-fill','coin'],
+    menu_icon="cast",
+    default_index=0,
+    orientation='horizontal',
+    styles={
+        "container": {
+            "padding": "5!important", 
+            "background-color": "#ffffff",  # Pure white background
+            "max-width": "100%",
+            "border-radius": "10px",
+            "box-shadow": "0 0 10px rgba(0,0,0,0.1)"
+        },
+        "icon": {
+            "color": "orange",  # Icons in bright color
+            "font-size": "25px"
+        }, 
+        "nav-link": {
+            "font-size": "16px", 
+            "text-align": "left", 
+            "margin": "0px", 
+            "--hover-color": "#f2f2f2",
+            "color": "black"  # Text for unselected tabs
+        },
+        "nav-link-selected": {
+            "background-color": "#02ab21",  # Green highlight
+            "color": "white"  # Selected tab text
+        }
+    }
+)
 
 # calling display class
 Display(choose)
